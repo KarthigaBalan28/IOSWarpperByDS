@@ -82,8 +82,8 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
           sonar-scanner \
-            -Dsonar.projectKey=Sushantdubey79_ApproveIosWrapper \
-            -Dsonar.organization=sushantdubey79 \
+            -Dsonar.projectKey=KarthigaBalan28_IOSWrapperByDS \
+            -Dsonar.organization=KarthigaBalan28 \
             -Dsonar.host.url=https://sonarcloud.io \
             -Dsonar.login=${{ secrets.SONAR_TOKEN }} \
             -Dsonar.sources=HIDApproveSDKWrapper \
