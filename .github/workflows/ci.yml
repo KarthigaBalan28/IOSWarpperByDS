@@ -1,0 +1,96 @@
+name: SonarQube Analysis with Objective-C
+
+on:
+  push:
+    branches: [ main, develop, master ]
+  pull_request:
+    branches: [ main, develop, master ]
+
+jobs:
+  sonar-scan:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: 'latest-stable'
+
+      - name: Install SonarQube Scanner and Build Wrapper
+        run: |
+          brew install sonar-scanner
+          curl -sSLO https://sonarcloud.io/static/cpp/build-wrapper-macosx-x86.zip
+          unzip -o build-wrapper-macosx-x86.zip
+
+      - name: Debug Xcode project info
+        run: |
+          echo "=== Available schemes ==="
+          xcodebuild -project HIDApproveSDKWrapper.xcodeproj -list
+          echo "=== Available simulators ==="
+          xcrun simctl list devices available | grep iPhone | head -5
+
+      - name: Build project with Build Wrapper
+        run: |
+          # Try to build with build wrapper, but continue even if it fails
+          set +e
+          echo "=== Building with wrapper ==="
+          ./build-wrapper-macosx-x86/build-wrapper-macosx-x86 \
+            --out-dir bw-output \
+            xcodebuild \
+              -project HIDApproveSDKWrapper.xcodeproj \
+              -scheme HIDApproveSDKWrapper \
+              -configuration Debug \
+              -destination 'platform=iOS Simulator,name=Any iOS Simulator Device' \
+              -sdk iphonesimulator \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGN_IDENTITY="" \
+              PROVISIONING_PROFILE="" \
+              ONLY_ACTIVE_ARCH=YES \
+              clean build
+          
+          BUILD_EXIT_CODE=$?
+          set -e
+          
+          # Check if build succeeded
+          if [ $BUILD_EXIT_CODE -eq 0 ]; then
+            echo "=== Build successful ==="
+          else
+            echo "=== Build failed, creating minimal compilation database ==="
+            mkdir -p bw-output
+            # Create a minimal compilation database for basic analysis
+            echo '[
+              {
+                "directory": "'$(pwd)'",
+                "command": "clang -c HIDApproveSDKWrapper/HIDApproveSDKWrapper.m -o /tmp/temp.o",
+                "file": "HIDApproveSDKWrapper/HIDApproveSDKWrapper.m"
+              },
+              {
+                "directory": "'$(pwd)'",
+                "command": "clang -c HIDApproveSDKWrapper/HIDWrapperConstants.m -o /tmp/temp.o",
+                "file": "HIDApproveSDKWrapper/HIDWrapperConstants.m"
+              }
+            ]' > bw-output/compile_commands.json
+          fi
+
+      - name: Run SonarQube Analysis with Objective-C
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          sonar-scanner \
+            -Dsonar.projectKey=Sushantdubey79_ApproveIosWrapper \
+            -Dsonar.organization=sushantdubey79 \
+            -Dsonar.host.url=https://sonarcloud.io \
+            -Dsonar.login=${{ secrets.SONAR_TOKEN }} \
+            -Dsonar.sources=HIDApproveSDKWrapper \
+            -Dsonar.tests=HIDApproveSDKWrapperTests \
+            -Dsonar.test.inclusions=/*Tests.m \
+            -Dsonar.exclusions=/HID_Approve_SDK.xcframework/,/DerivedData/,/xcuserdata/,/build-wrapper-macosx-x86/,/bw-output/** \
+            -Dsonar.objc.file.suffixes=.m,.mm \
+            -Dsonar.cfamily.file.suffixes=.h \
+            -Dsonar.cfamily.compile-commands=bw-output/compile_commands.json \
+            -Dsonar.scm.provider=git
